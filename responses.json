@@ -1,0 +1,7 @@
+[
+  {"user_input": "Hello, can you tell me about yourself?", "response": "I am an AI assistant designed to help you with questions."},
+  {"user_input": "What's the weather like in New York today?", "response": "I'm not connected to real-time data, but you can check a weather service."},
+  {"user_input": "How do I install Python on Windows?", "response": "Download the installer from python.org and follow the prompts."},
+  {"user_input": "Tell me a joke about computers.", "response": "Why did the computer get cold? Because it forgot to close its Windows."},
+  {"user_input": "What's the capital of France?", "response": "The capital of France is Paris."}
+]
