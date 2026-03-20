@@ -10,7 +10,7 @@ class DeepSeekChatbot:
         """Initialize the DeepSeek Chatbot"""
         
         # Get API key from parameter or environment variable
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        self.api_key = api_key or os.getenv("sk-08d0f863538b44fba74807453f8c5dbd")
         
         if not self.api_key:
             raise ValueError(
