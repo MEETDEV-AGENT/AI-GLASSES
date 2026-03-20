@@ -1,126 +1,131 @@
-import sys
-import torch
-from airllm import AutoModel
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
 
-# ================= CONFIGURATION =================
-# WARNING: 105B is extremely large. 
-# Ensure you have enough Disk Space (~200GB+) and System RAM (64GB+).
-MODEL_ID = "sarvamai/sarvam-105b" 
-MAX_LENGTH = 2048  # Context window limit
-MAX_NEW_TOKENS = 150 # Response length
-# =================================================
+# Load environment variables from .env file
+load_dotenv()
 
-def load_model():
-    print(f"Loading {MODEL_ID} with AirLLM...")
-    print("This may take several minutes depending on your internet and disk speed.")
-    try:
-        # AirLLM automatically handles layer offloading to fit VRAM
-        model = AutoModel.from_pretrained(MODEL_ID)
-        print("Model loaded successfully!")
-        return model
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        print("Tip: Ensure you are logged in to Hugging Face if the model is gated.")
-        print("Tip: Check your disk space.")
-        sys.exit(1)
+class DeepSeekChatbot:
+    def __init__(self, api_key=None):
+        """Initialize the DeepSeek Chatbot"""
+        
+        # Get API key from parameter or environment variable
+        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        
+        if not self.api_key:
+            raise ValueError(
+                "API Key not found! Please set DEEPSEEK_API_KEY environment variable "
+                "or pass it directly to the constructor."
+            )
+        
+        # Initialize DeepSeek client
+        self.client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com")
+        
+        # Chat configuration
+        self.model = "deepseek-chat"
+        self.conversation_history = []
+        self.system_prompt = """You are a helpful, friendly AI assistant. 
+        You can help with various tasks including answering questions, providing information,
+        and having meaningful conversations. Be concise, accurate, and helpful in your responses."""
+        
+        # Initialize conversation with system prompt
+        self.conversation_history.append({
+            "role": "system",
+            "content": self.system_prompt
+        })
+        
+        print("✅ DeepSeek Chatbot initialized successfully!")
+        print(f"🤖 Model: {self.model}")
+        print("-" * 50)
 
-def get_prompt(history, user_input):
-    """
-    Formats the conversation history into a prompt string.
-    Note: You may need to adjust this template based on Sarvam's specific training format.
-    """
-    # Generic Instruction Format
-    prompt = ""
-    for entry in history:
-        prompt += f"User: {entry['user']}\nAssistant: {entry['assistant']}\n"
-    
-    prompt += f"User: {user_input}\nAssistant:"
-    return prompt
-
-def chat_loop(model):
-    history = []
-    print("\n--- Sarvam 105B Chatbot Started ---")
-    print("Type 'quit' or 'exit' to stop.\n")
-
-    while True:
+    def chat(self, user_message):
+        """Send a message and get response from DeepSeek"""
+        
+        # Add user message to history
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_message
+        })
+        
         try:
-            user_input = input("You: ").strip()
-            if user_input.lower() in ['quit', 'exit', 'q']:
-                print("Goodbye!")
-                break
-            
-            if not user_input:
-                continue
-
-            # 1. Format Prompt with History
-            full_prompt = get_prompt(history, user_input)
-
-            # 2. Tokenize
-            # We tokenize the entire history + new input to maintain context
-            input_tokens = model.tokenizer(
-                full_prompt,
-                return_tensors="pt",
-                return_attention_mask=False,
-                truncation=True,
-                max_length=MAX_LENGTH,
-                padding=False
+            # Call DeepSeek Chat Completion API
+            response = self.client.chat.completions.create(  # type: ignore
+                model=self.model,
+                messages=self.conversation_history,  # type: ignore
+                temperature=0.7,
+                max_tokens=1024
             )
-
-            # 3. Move to Device
-            input_ids = input_tokens['input_ids'].cuda()
-
-            # 4. Generate
-            print("Sarvam: ", end="", flush=True)
             
-            generation_output = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=MAX_NEW_TOKENS,
-                use_cache=True,
-                return_dict_in_generate=True,
-                pad_token_id=model.tokenizer.eos_token_id,
-                eos_token_id=model.tokenizer.eos_token_id
-            )
-
-            # 5. Decode Output
-            output_sequence = generation_output.sequences[0]
-            full_response = model.tokenizer.decode(output_sequence, skip_special_tokens=True)
-
-            # 6. Extract only the new response (remove prompt history)
-            # We split by the last "Assistant:" tag to get just the generated text
-            if "Assistant:" in full_response:
-                response_text = full_response.split("Assistant:")[-1].strip()
-            else:
-                response_text = full_response.replace(full_prompt, "").strip()
-
-            print(response_text)
-            print("\n") # Newline for next input
-
-            # 7. Update History
-            history.append({
-                "user": user_input,
-                "assistant": response_text
+            # Extract bot response
+            bot_message = response.choices[0].message.content
+            
+            # Add bot response to history
+            self.conversation_history.append({  # type: ignore
+                "role": "assistant",
+                "content": bot_message  # type: ignore
             })
-
-            # Optional: Limit history to prevent context overflow
-            if len(history) > 10:
-                history.pop(0)
-
-            # Clear CUDA cache occasionally to prevent fragmentation
-            torch.cuda.empty_cache()
-
-        except KeyboardInterrupt:
-            print("\nInterrupted by user.")
-            break
+            
+            return bot_message
+            
         except Exception as e:
-            print(f"\nAn error occurred: {e}")
-            print("Try reducing MAX_LENGTH or MAX_NEW_TOKENS.")
-            break
+            error_message = f"Error: {str(e)}"
+            return error_message
 
+    def clear_history(self):
+        """Clear conversation history"""
+        self.conversation_history = [{
+            "role": "system",
+            "content": self.system_prompt
+        }]
+        print("🗑️ Conversation history cleared!")
+
+    def run(self):
+        """Main chat loop"""
+        print("\n🤖 Welcome to DeepSeek AI Chatbot!")
+        print("Type 'quit' or 'exit' to end the conversation")
+        print("Type 'clear' to clear conversation history")
+        print("-" * 50)
+        
+        while True:
+            try:
+                # Get user input
+                user_input = input("\nYou: ").strip()
+                
+                # Check if empty
+                if not user_input:
+                    continue
+                
+                # Check for commands
+                if user_input.lower() in ['quit', 'exit', 'bye', 'goodbye']:
+                    print("\n🤖 DeepSeek Bot: Goodbye! Have a great day! 👋")
+                    break
+                
+                if user_input.lower() == 'clear':
+                    self.clear_history()
+                    continue
+                
+                # Get bot response
+                print("\n🤖 DeepSeek Bot: Thinking...", end="\r")
+                response = self.chat(user_input)
+                print(" " * 50, end="\r")  # Clear "Thinking..." message
+                
+                print(f"🤖 DeepSeek Bot: {response}")
+                
+            except KeyboardInterrupt:
+                print("\n\n🤖 DeepSeek Bot: Goodbye! 👋")
+                break
+            except Exception as e:
+                print(f"\n❌ Error: {str(e)}")
+
+
+# Run the chatbot
 if __name__ == "__main__":
-    # Check CUDA availability
-    if not torch.cuda.is_available():
-        print("Warning: CUDA not detected. AirLLM works best with an NVIDIA GPU.")
+    # Option 1: Pass API key directly (not recommended for production)
+    # YOUR_API_KEY = "sk_5b9cb3216a0241268097010fc3344d37"  # Replace with your key
+    # bot = DeepSeekChatbot(api_key=YOUR_API_KEY)
     
-    model = load_model()
-    chat_loop(model)
+    # Option 2: Use environment variable (RECOMMENDED)
+    # Create a .env file with: DEEPSEEK_API_KEY=your_key_here
+    bot = DeepSeekChatbot()
+    bot.run()
+
